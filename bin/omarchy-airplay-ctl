@@ -63,8 +63,8 @@ def discovery():
   except ValueError:continue
   if a in seen:continue
   name=clean(re.sub(r"\\(\d{3})",lambda m:chr(int(m.group(1))),f[3]),NAMES) or a
-  m=re.search(r"(?:^|,)deviceid=([0-9A-Fa-f:]+)",f[9]); i=m.group(1) if m and IDS.fullmatch(m.group(1)) else ""
-  print(f"{name}\t{a}\t{i}\t{int(i in c)}");seen.add(a)
+  m=re.search(r"(?:^|[,\x22])deviceid=([0-9A-Fa-f:]+)",f[9]); i=m.group(1) if m and IDS.fullmatch(m.group(1)) else ""
+  print(f"{name}\t{a}\t{i}\t{int(i in c)}\t{f[8] if f[8].isdigit() else '0'}");seen.add(a)
   if len(seen)==32:return
 def firewall(q,a):
  if not a or not IDS.fullmatch(a[0]):die("Invalid device ID")
@@ -105,14 +105,16 @@ def main():
     try:os.unlink("target.tsv",dir_fd=d)
     except FileNotFoundError:pass
    else:
-    if len(a)not in(2,3):die("Invalid target")
-    name=clean(a[0],NAMES);addr=str(ipaddress.ip_address(a[1]));i=a[2] if len(a)==3 and IDS.fullmatch(a[2]) else ""
-    write(d,"target.tsv",f"{name}\t{addr}\t{i}\n".encode())
+    if len(a)not in(2,3,4):die("Invalid target")
+    name=clean(a[0],NAMES);addr=str(ipaddress.ip_address(a[1]));i=a[2] if len(a)>=3 and IDS.fullmatch(a[2]) else ""
+    p=a[3] if len(a)==4 and a[3].isdigit() and 0<int(a[3])<=65535 else "0"
+    write(d,"target.tsv",f"{name}\t{addr}\t{i}\t{p}\n".encode())
   finally:os.close(d)
  elif q in ("paired","forget","clear-restore"):
   if len(a)!=1 or not IDS.fullmatch(a[0]):die("Invalid device ID")
   if q=="paired":raise SystemExit(0 if a[0] in creds() else 1)
-  d=dfd("doubletake")
+  try:d=dfd("doubletake")
+  except FileNotFoundError:raise SystemExit(0)
   try:
    v=creds();v.pop(a[0],None) if q=="forget" else (v.get(a[0],{}).pop("restore_token",None) if isinstance(v.get(a[0]),dict) else None)
    write(d,"credentials.json",json.dumps(v,separators=(",",":")).encode())

@@ -17,6 +17,7 @@ BarWidget {
   property string selectedName: ""
   property string selectedAddress: ""
   property string selectedDeviceId: ""
+  property int selectedPort: 0
   property bool receiverAvailable: false
   property bool pairingRequired: false
   property bool pairingPromptActive: false
@@ -96,7 +97,8 @@ BarWidget {
         name: fields[0],
         address: fields[1],
         deviceId: fields[2] || "",
-        paired: fields[3] === "1"
+        paired: fields[3] === "1",
+        port: Number(fields[4]) || 0
       })
     }
     return found
@@ -106,12 +108,16 @@ BarWidget {
     root.selectedName = name
     root.selectedAddress = address
     root.selectedDeviceId = deviceId || ""
+    root.selectedPort = 0
     root.receiverAvailable = true
     root.pairingPromptActive = false
     for (var i = 0; i < root.receivers.length; i++) {
-      if (root.receivers[i].address === address) root.pairingRequired = !root.receivers[i].paired
+      if (root.receivers[i].address === address) {
+        root.pairingRequired = !root.receivers[i].paired
+        root.selectedPort = root.receivers[i].port || 0
+      }
     }
-    saveProcess.command = [root.ctlPath, "save", name, address, root.selectedDeviceId]
+    saveProcess.command = [root.ctlPath, "save", name, address, root.selectedDeviceId, String(root.selectedPort || 0)]
     saveProcess.running = true
     root.checkPairing()
     root.refreshFirewallState()
@@ -190,6 +196,7 @@ BarWidget {
         name: receiver.name,
         address: receiver.address,
         deviceId: receiver.deviceId,
+        port: receiver.port || 0,
         paired: receiver.address === address ? paired : receiver.paired
       })
     }
@@ -213,6 +220,7 @@ BarWidget {
     if (vaapiDriver !== "") command.push("LIBVA_DRIVER_NAME=" + vaapiDriver)
     command.push(executable)
     command.push("-target", root.selectedAddress)
+    if (root.selectedPort > 0) command.push("-port", String(root.selectedPort))
     command.push("-port-range", portRange, "-video-codec", codec, "-hwaccel", encoder, "-fps", String(fps), "-target-latency-ms", String(latency))
     if (!root.boolSetting("audio", false)) command.push("-no-audio")
     if (pairCode !== "") command.push("-pair", "-code", pairCode)
@@ -305,6 +313,7 @@ BarWidget {
           root.selectedName = fields[0]
           root.selectedAddress = fields[1]
           root.selectedDeviceId = fields[2] || ""
+          root.selectedPort = Number(fields[3]) || 0
           root.receiverAvailable = false
           root.checkPairing()
         }
