@@ -21,10 +21,8 @@ Panel {
   property bool pairingRequired: false
   property bool pairingPromptActive: false
   property string discoveryError: ""
-  property string streamError: ""
   property bool mirroring: false
   property string networkDescription: ""
-  property string firewallError: ""
   property bool firewallManaged: false
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -99,17 +97,6 @@ Panel {
                 onClicked: if (root.hostWidget) root.hostWidget.discover()
               }
             }
-          }
-
-          Text {
-            visible: root.streamError !== ""
-            width: parent.width
-            text: root.streamError
-            textFormat: Text.PlainText
-            color: Color.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
           }
 
           PanelSeparator { foreground: root.foreground }
@@ -285,17 +272,6 @@ Panel {
               ? root.t("firewallManaged", { address: root.selectedAddress })
               : root.t("firewallHelp", { address: root.selectedAddress })
             color: root.firewallManaged ? Color.accent : root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          Text {
-            visible: root.firewallError !== ""
-            width: parent.width
-            text: root.firewallError
-            textFormat: Text.PlainText
-            color: Color.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap

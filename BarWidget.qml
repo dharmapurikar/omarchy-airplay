@@ -22,9 +22,8 @@ BarWidget {
   property bool pairingRequired: false
   property bool pairingPromptActive: false
   property string discoveryError: ""
-  property string streamError: ""
+  property bool sessionEstablished: false
   property string networkDescription: ""
-  property string firewallError: ""
   property bool firewallManaged: false
   property string forgettingAddress: ""
   property bool deliberateStop: false
@@ -37,8 +36,8 @@ BarWidget {
 
   readonly property var mirroredProperties: [
     "bar", "settings", "receivers", "selectedName", "selectedAddress",
-    "selectedDeviceId", "receiverAvailable", "pairingRequired", "pairingPromptActive", "discoveryError", "streamError", "mirroring",
-    "networkDescription", "firewallError", "firewallManaged"
+    "selectedDeviceId", "receiverAvailable", "pairingRequired", "pairingPromptActive", "discoveryError", "mirroring",
+    "networkDescription", "firewallManaged"
   ]
 
   function boolSetting(key, fallback) {
@@ -131,7 +130,6 @@ BarWidget {
 
   function refreshFirewallState() {
     root.firewallManaged = false
-    root.firewallError = ""
     if (root.selectedDeviceId === "") { root.injectPanel(); return }
     firewallLoadProcess.command = [root.ctlPath, "firewall-load", root.selectedDeviceId]
     firewallLoadProcess.running = true
@@ -139,7 +137,6 @@ BarWidget {
 
   function allowSelectedReceiver() {
     if (root.selectedDeviceId === "" || root.selectedAddress === "") return "no-receiver"
-    root.firewallError = ""
     firewallAllowProcess.command = [root.runnerPath, "--timeout", "120", "--", "pkexec", "/usr/bin/ufw", "allow", "from", root.selectedAddress,
       "to", "any", "port", String(root.setting("portRange", "60000-60010")).replace("-", ":"), "proto", "udp"]
     firewallAllowProcess.running = true
@@ -172,7 +169,7 @@ BarWidget {
 
   function forgetReceiver(receiver) {
     if (!receiver || receiver.deviceId === "") {
-      root.streamError = root.t("pairingCannotForget")
+      root.notify(root.t("airplayMirror"), root.t("pairingCannotForget"))
       root.injectPanel()
       return
     }
@@ -228,10 +225,10 @@ BarWidget {
   }
 
   function launchStream(pairCode) {
-    root.streamError = ""
+    root.sessionEstablished = false
     root.deliberateStop = false
     var command = root.streamCommand(pairCode || "")
-    if (command === null) { root.streamError = "Invalid DoubleTake settings"; root.injectPanel(); return "invalid-settings" }
+    if (command === null) { root.notify(root.t("connectionFailedTitle"), root.t("invalidSettings")); root.injectPanel(); return "invalid-settings" }
     mirrorProcess.command = command
     mirrorProcess.running = true
     root.notify(root.t("mirroringTitle"), root.t("connecting", { name: root.selectedName }))
@@ -370,7 +367,7 @@ BarWidget {
         firewallSaveProcess.running = true
         root.firewallManaged = true
         root.notify(root.t("firewallAllowedTitle"), root.t("firewallAllowed", { address: root.selectedAddress }))
-      } else root.firewallError = root.t("firewallAllowFailed")
+      } else root.notify(root.t("airplayMirror"), root.t("firewallAllowFailed"))
       firewallAllowProcess.errText = ""
       root.injectPanel()
     }
@@ -401,7 +398,7 @@ BarWidget {
         firewallClearProcess.running = true
         root.finishForget()
       } else {
-        root.firewallError = root.t("firewallRemoveFailed")
+        root.notify(root.t("airplayMirror"), root.t("firewallRemoveFailed"))
         pendingForgetReceiver = null
       }
       root.injectPanel()
@@ -434,7 +431,7 @@ BarWidget {
     onExited: function(code) {
       if (code === 0) root.launchStream(root.pendingStartPairCode)
       else {
-        root.streamError = String(clearRestoreProcess.errText).trim() || root.t("capturePreparationFailed")
+        root.notify(root.t("connectionFailedTitle"), String(clearRestoreProcess.errText).trim() || root.t("capturePreparationFailed"))
         root.injectPanel()
       }
       clearRestoreProcess.errText = ""
@@ -454,7 +451,7 @@ BarWidget {
     property string errText: ""
     stderr: StdioCollector { waitForEnd: true; onStreamFinished: forgetProcess.errText = text }
     onExited: function(code) {
-      if (code !== 0) root.streamError = String(forgetProcess.errText).trim() || root.t("pairingForgetFailed")
+      if (code !== 0) root.notify(root.t("connectionFailedTitle"), String(forgetProcess.errText).trim() || root.t("pairingForgetFailed"))
       else {
         if (root.forgettingAddress === root.selectedAddress) root.firewallManaged = false
         root.notify(root.t("pairingForgottenTitle"), root.t("pairingForgotten"))
@@ -492,26 +489,33 @@ BarWidget {
 
   Process {
     id: mirrorProcess
-    property string errText: ""
-    stderr: StdioCollector { waitForEnd: true; onStreamFinished: mirrorProcess.errText = text }
+    stderr: SplitParser {
+      onRead: function(data) {
+        if (String(data).indexOf("connected to:") !== -1) root.sessionEstablished = true
+      }
+    }
     onExited: function(code) {
       var wasDeliberate = root.deliberateStop
+      var wasEstablished = root.sessionEstablished
       root.deliberateStop = false
+      root.sessionEstablished = false
       if (root.queuedPairCode !== "") {
         var codeToUse = root.queuedPairCode
         root.queuedPairCode = ""
         Qt.callLater(function() { root.start(codeToUse) })
-      } else if (!wasDeliberate && code !== 0) {
-        if (root.pairingAttemptInFlight) {
-          root.pairingAttemptInFlight = false
-          pairingCompleteTimer.stop()
-          root.setReceiverPairing(root.selectedAddress, false)
-          root.pairingPromptActive = true
+      } else if (!wasDeliberate) {
+        if (wasEstablished) {
+          root.notify(root.t("disconnectedTitle"), root.t("airplayDisconnected", { name: root.selectedName }))
+        } else if (code !== 0) {
+          if (root.pairingAttemptInFlight) {
+            root.pairingAttemptInFlight = false
+            pairingCompleteTimer.stop()
+            root.setReceiverPairing(root.selectedAddress, false)
+            root.pairingPromptActive = true
+          }
+          root.notify(root.t("connectionFailedTitle"), root.t("connectionFailed", { name: root.selectedName, code: code }))
         }
-        root.streamError = root.t("connectionFailed", { code: code })
-        root.notify(root.t("connectionFailedTitle"), root.streamError)
       }
-      mirrorProcess.errText = ""
       root.injectPanel()
     }
   }
